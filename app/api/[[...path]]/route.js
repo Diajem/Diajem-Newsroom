@@ -773,7 +773,7 @@ async function handleRoute(request, { params }) {
     if (route === '/public/articles' && method === 'GET') {
       const filter = { is_published: true }
       if (sp.category_id) filter.category_id = sp.category_id
-      if (sp.category) filter.category_name = { $regex: `^${sp.category}$`, $options: 'i' }
+      if (sp.category) filter.category_id = sp.category  // Use category_id for filtering
       const page = parseInt(sp.page) || 1
       const limit = parseInt(sp.limit) || 20
       const total = await db.collection('articles').countDocuments(filter)

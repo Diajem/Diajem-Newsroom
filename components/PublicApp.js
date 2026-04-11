@@ -596,6 +596,7 @@ function ArticlePage({ slug }) {
 function CategoryPage({ slug }) {
   const { navigate } = useContext(NavContext)
   const [articles, setArticles] = useState([])
+  const [videos, setVideos] = useState([])
   const [category, setCategory] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -607,8 +608,15 @@ function CategoryPage({ slug }) {
         setCategory(cat)
         
         if (cat) {
-          const data = await api(`/public/articles?category=${cat.id}&limit=20`)
-          setArticles(data || [])
+          // If Diajem TV category, fetch YouTube videos
+          if (cat.name === 'Diajem TV') {
+            const vids = await api('/youtube/videos')
+            setVideos(vids || [])
+          } else {
+            // Otherwise fetch articles
+            const data = await api(`/public/articles?category=${cat.id}&limit=20`)
+            setArticles(data?.articles || [])
+          }
         }
       } catch (e) {
         console.error(e)
@@ -641,25 +649,55 @@ function CategoryPage({ slug }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {Array.isArray(articles) && articles.map(article => (
-              <button key={article.id} onClick={() => navigate(`/article/${article.slug}`)} className="group block text-left">
-                <div className="relative h-56 bg-gray-200 mb-4 overflow-hidden">
-                  <img src={getImageUrl(article)} alt={article.headline} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />
-                </div>
-                <h2 className="text-xl font-semibold text-gray-900 group-hover:text-yellow-700 transition mb-3 line-clamp-3">{article.headline}</h2>
-                <p className="text-sm text-gray-600 mb-3 line-clamp-2">{article.excerpt}</p>
-                <div className="flex items-center gap-3 text-xs text-gray-500">
-                  <span>{new Date(article.published_at || article.created_at).toLocaleDateString()}</span>
-                  <span>•</span>
-                  <span>{article.read_time} min read</span>
-                </div>
-              </button>
-            ))}
-          </div>
+          {/* YouTube Videos for Diajem TV */}
+          {category?.name === 'Diajem TV' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {Array.isArray(videos) && videos.map(video => (
+                <a key={video.id} href={video.video_url} target="_blank" rel="noopener noreferrer" className="group block">
+                  <div className="relative h-56 bg-gray-900 mb-4 overflow-hidden">
+                    <img src={video.thumbnail_url} alt={video.title} className="w-full h-full object-cover group-hover:opacity-80 transition" />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="w-16 h-16 bg-red-600 rounded-full flex items-center justify-center group-hover:scale-110 transition">
+                        <svg className="w-8 h-8 text-white ml-1" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" /></svg>
+                      </div>
+                    </div>
+                    <div className="absolute top-2 right-2">
+                      <Badge className="bg-red-600 text-white">{video.subcategory}</Badge>
+                    </div>
+                  </div>
+                  <h2 className="text-xl font-semibold text-gray-900 group-hover:text-yellow-700 transition mb-3 line-clamp-2">{video.title}</h2>
+                  <p className="text-sm text-gray-500">{new Date(video.published_at).toLocaleDateString()}</p>
+                </a>
+              ))}
+            </div>
+          )}
 
-          {(!Array.isArray(articles) || articles.length === 0) && (
+          {/* Articles for other categories */}
+          {category?.name !== 'Diajem TV' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {Array.isArray(articles) && articles.map(article => (
+                <button key={article.id} onClick={() => navigate(`/article/${article.slug}`)} className="group block text-left">
+                  <div className="relative h-56 bg-gray-200 mb-4 overflow-hidden">
+                    <img src={getImageUrl(article)} alt={article.headline} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />
+                  </div>
+                  <h2 className="text-xl font-semibold text-gray-900 group-hover:text-yellow-700 transition mb-3 line-clamp-3">{article.headline}</h2>
+                  <p className="text-sm text-gray-600 mb-3 line-clamp-2">{article.excerpt}</p>
+                  <div className="flex items-center gap-3 text-xs text-gray-500">
+                    <span>{new Date(article.published_at || article.created_at).toLocaleDateString()}</span>
+                    <span>•</span>
+                    <span>{article.read_time} min read</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {(!Array.isArray(articles) || articles.length === 0) && (!Array.isArray(videos) || videos.length === 0) && category?.name !== 'Diajem TV' && (
             <p className="text-center text-gray-500 py-12">No articles found in this category.</p>
+          )}
+          
+          {(!Array.isArray(videos) || videos.length === 0) && category?.name === 'Diajem TV' && (
+            <p className="text-center text-gray-500 py-12">No videos found. Sync YouTube videos from the dashboard.</p>
           )}
         </div>
 
@@ -681,7 +719,7 @@ function SearchPage({ query }) {
     const fetchResults = async () => {
       try {
         const data = await api(`/public/articles?search=${encodeURIComponent(query)}&limit=20`)
-        setArticles(data || [])
+        setArticles(data?.articles || [])
       } catch (e) {
         console.error(e)
       } finally {

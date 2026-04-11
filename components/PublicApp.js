@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useContext } from 'react'
+import { useState, useEffect, useContext, useMemo } from 'react'
 import { NavContext } from '@/lib/nav-context'
 import { api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -209,11 +209,17 @@ function HomePage() {
   }
 
   const getArticlesByCategory = (catName) => {
-    return (articles || []).filter(a => a.category_name === catName).slice(0, 4)
+    if (!Array.isArray(articles)) return []
+    return articles.filter(a => a.category_name === catName).slice(0, 4)
   }
 
-  const heroArticle = (articles || [])[0]
-  const topStories = (articles || []).slice(1, 5)
+  const heroArticle = useMemo(() => {
+    return Array.isArray(articles) && articles.length > 0 ? articles[0] : null
+  }, [articles])
+
+  const topStories = useMemo(() => {
+    return Array.isArray(articles) ? articles.slice(1, 5) : []
+  }, [articles])
 
   if (loading) {
     return (
@@ -378,7 +384,7 @@ function HomePage() {
           <div className="bg-gray-50 p-6 rounded">
             <h3 className="text-lg font-bold text-gray-900 mb-4 border-b-2 border-yellow-500 pb-2">Trending Now</h3>
             <div className="space-y-4">
-              {(articles || []).slice(5, 10).map((article, idx) => (
+              {Array.isArray(articles) && articles.slice(5, 10).map((article, idx) => (
                 <button key={article.id} onClick={() => navigate(`/article/${article.slug}`)} className="group flex gap-3 text-left">
                   <span className="text-2xl font-bold text-yellow-500">{idx + 1}</span>
                   <div>

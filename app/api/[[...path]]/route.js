@@ -602,8 +602,10 @@ async function handleRoute(request, { params }) {
       const ad = {
         id: uuidv4(),
         name: body.name || '',
+        ad_type: body.ad_type || 'image',
         image_url: body.image_url || '',
         link_url: body.link_url || '',
+        embed_code: body.embed_code || '',
         zone: body.zone || 'top_banner',
         is_active: body.is_active !== false,
         created_at: new Date(),

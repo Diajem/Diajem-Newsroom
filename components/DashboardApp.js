@@ -1111,7 +1111,7 @@ function AdsPage({ navigate }) {
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
   const [editingAd, setEditingAd] = useState(null)
-  const [form, setForm] = useState({ name: '', image_url: '', link_url: '', zone: 'top_banner', is_active: true })
+  const [form, setForm] = useState({ name: '', ad_type: 'image', image_url: '', link_url: '', embed_code: '', zone: 'top_banner', is_active: true })
 
   const adZones = [
     { value: 'top_banner', label: 'Top Banner (728x90)' },
@@ -1121,6 +1121,7 @@ function AdsPage({ navigate }) {
     { value: 'article_top', label: 'Article Top Ad' },
     { value: 'article_mid', label: 'Article Mid Ad' },
     { value: 'article_end', label: 'Article End Ad' },
+    { value: 'article_sidebar', label: 'Article Sidebar Widget' },
     { value: 'category_sidebar', label: 'Category Sidebar' }
   ]
 
@@ -1135,14 +1136,16 @@ function AdsPage({ navigate }) {
   useEffect(() => { loadAds() }, [])
 
   const saveAd = async () => {
-    if (!form.name || !form.image_url) return alert('Name and image URL required')
+    if (!form.name) return alert('Name is required')
+    if (form.ad_type === 'image' && !form.image_url) return alert('Image URL required for image ads')
+    if (form.ad_type === 'code' && !form.embed_code) return alert('Embed code required for code ads')
     try {
       if (editingAd) {
         await api(`/ads/${editingAd.id}`, { method: 'PUT', body: JSON.stringify(form) })
       } else {
         await api('/ads', { method: 'POST', body: JSON.stringify(form) })
       }
-      setForm({ name: '', image_url: '', link_url: '', zone: 'top_banner', is_active: true })
+      setForm({ name: '', ad_type: 'image', image_url: '', link_url: '', embed_code: '', zone: 'top_banner', is_active: true })
       setShowAdd(false)
       setEditingAd(null)
       loadAds()
@@ -1159,7 +1162,15 @@ function AdsPage({ navigate }) {
 
   const editAd = (ad) => {
     setEditingAd(ad)
-    setForm({ name: ad.name, image_url: ad.image_url, link_url: ad.link_url, zone: ad.zone, is_active: ad.is_active })
+    setForm({ 
+      name: ad.name, 
+      ad_type: ad.ad_type || 'image',
+      image_url: ad.image_url || '', 
+      link_url: ad.link_url || '', 
+      embed_code: ad.embed_code || '',
+      zone: ad.zone, 
+      is_active: ad.is_active 
+    })
     setShowAdd(true)
   }
 
@@ -1176,7 +1187,7 @@ function AdsPage({ navigate }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-gray-500">{ads.length} advertisements</p>
-        <Button size="sm" onClick={() => { setShowAdd(true); setEditingAd(null); setForm({ name: '', image_url: '', link_url: '', zone: 'top_banner', is_active: true }) }} className="bg-brand-gold text-brand-navy">
+        <Button size="sm" onClick={() => { setShowAdd(true); setEditingAd(null); setForm({ name: '', ad_type: 'image', image_url: '', link_url: '', embed_code: '', zone: 'top_banner', is_active: true }) }} className="bg-brand-gold text-brand-navy">
           <PlusCircle className="h-4 w-4 mr-1" />Add Advertisement
         </Button>
       </div>
@@ -1189,17 +1200,47 @@ function AdsPage({ navigate }) {
           <CardContent className="space-y-3">
             <div>
               <Label>Ad Name</Label>
-              <Input placeholder="e.g., Top Banner - Sponsor A" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} />
+              <Input placeholder="e.g., Expedia Widget - Article End" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} />
             </div>
             <div>
-              <Label>Image URL</Label>
-              <Input placeholder="https://example.com/ad-image.jpg" value={form.image_url} onChange={e => setForm(p => ({ ...p, image_url: e.target.value }))} />
-              <p className="text-xs text-gray-500 mt-1">Upload image via Media Library first, then paste URL here</p>
+              <Label>Ad Type</Label>
+              <Select value={form.ad_type} onValueChange={(v) => setForm(p => ({ ...p, ad_type: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="image">Image Ad (Banner)</SelectItem>
+                  <SelectItem value="code">Code/Embed (Widget, Script)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <div>
-              <Label>Click URL (Link)</Label>
-              <Input placeholder="https://example.com/landing-page" value={form.link_url} onChange={e => setForm(p => ({ ...p, link_url: e.target.value }))} />
-            </div>
+            
+            {form.ad_type === 'image' && (
+              <>
+                <div>
+                  <Label>Image URL</Label>
+                  <Input placeholder="https://example.com/ad-image.jpg" value={form.image_url} onChange={e => setForm(p => ({ ...p, image_url: e.target.value }))} />
+                  <p className="text-xs text-gray-500 mt-1">Upload image via Media Library first, then paste URL here</p>
+                </div>
+                <div>
+                  <Label>Click URL (Link)</Label>
+                  <Input placeholder="https://example.com/landing-page" value={form.link_url} onChange={e => setForm(p => ({ ...p, link_url: e.target.value }))} />
+                </div>
+              </>
+            )}
+            
+            {form.ad_type === 'code' && (
+              <div>
+                <Label>Embed Code (HTML/JavaScript)</Label>
+                <Textarea 
+                  placeholder='<div class="eg-widget" data-widget="search">...</div><script src="..."></script>' 
+                  value={form.embed_code} 
+                  onChange={e => setForm(p => ({ ...p, embed_code: e.target.value }))}
+                  rows={6}
+                  className="font-mono text-xs"
+                />
+                <p className="text-xs text-gray-500 mt-1">Paste your affiliate code, widget script, or embed code here</p>
+              </div>
+            )}
+            
             <div>
               <Label>Ad Zone</Label>
               <Select value={form.zone} onValueChange={(v) => setForm(p => ({ ...p, zone: v }))}>
@@ -1225,9 +1266,16 @@ function AdsPage({ navigate }) {
         {ads.map(ad => (
           <Card key={ad.id}>
             <CardContent className="pt-4">
-              <div className="aspect-video bg-gray-100 mb-3 rounded overflow-hidden">
-                {ad.image_url && <img src={ad.image_url} alt={ad.name} className="w-full h-full object-cover" />}
-              </div>
+              {ad.ad_type === 'image' && ad.image_url && (
+                <div className="aspect-video bg-gray-100 mb-3 rounded overflow-hidden">
+                  <img src={ad.image_url} alt={ad.name} className="w-full h-full object-cover" />
+                </div>
+              )}
+              {ad.ad_type === 'code' && (
+                <div className="bg-gray-50 border border-gray-200 rounded p-3 mb-3">
+                  <code className="text-xs text-gray-600 break-all line-clamp-3">{ad.embed_code}</code>
+                </div>
+              )}
               <div className="space-y-2">
                 <div className="flex items-start justify-between">
                   <div>

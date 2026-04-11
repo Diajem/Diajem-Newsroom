@@ -257,14 +257,16 @@ function OverviewPage({ navigate }) {
 }
 
 // ===== NEW STORY =====
-function NewStoryPage({ navigate, categories }) {
+function NewStoryPage({ navigate, categories, subcategories }) {
   const [form, setForm] = useState({
     source_url: '', source_title: '', source_text: '', source_outlet: '', source_notes: '',
-    category_id: '', subcategory: '', region: '', country: '', content_type: 'Breaking News',
+    category_id: '', subcategory_id: '', region: '', country: '', content_type: 'Breaking News',
     urgency: 'normal', featured_image_url: '', tags: ''
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  const filteredSubs = subcategories.filter(s => s.category_id === form.category_id)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -272,11 +274,13 @@ function NewStoryPage({ navigate, categories }) {
     setSaving(true); setError('')
     try {
       const cat = categories.find(c => c.id === form.category_id)
+      const sub = subcategories.find(s => s.id === form.subcategory_id)
       const data = await api('/stories', {
         method: 'POST',
         body: JSON.stringify({
           ...form,
           category_name: cat?.name || '',
+          subcategory_name: sub?.name || '',
           tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : []
         })
       })
@@ -312,12 +316,20 @@ function NewStoryPage({ navigate, categories }) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <Label>Category</Label>
-              <Select value={form.category_id} onValueChange={(v) => setForm(p => ({ ...p, category_id: v }))}>
+              <Select value={form.category_id} onValueChange={(v) => setForm(p => ({ ...p, category_id: v, subcategory_id: '' }))}>
                 <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
                 <SelectContent>{categories.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
               </Select>
             </div>
-            <div><Label>Subcategory</Label><Input value={form.subcategory} onChange={set('subcategory')} placeholder="Optional subcategory" /></div>
+            <div>
+              <Label>Subcategory</Label>
+              <Select value={form.subcategory_id} onValueChange={(v) => setForm(p => ({ ...p, subcategory_id: v }))} disabled={!form.category_id}>
+                <SelectTrigger><SelectValue placeholder={form.category_id ? 'Select subcategory' : 'Select category first'} /></SelectTrigger>
+                <SelectContent>
+                  {filteredSubs.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div><Label>Region</Label><Input value={form.region} onChange={set('region')} placeholder="e.g., West Africa" /></div>
@@ -355,23 +367,29 @@ function NewStoryPage({ navigate, categories }) {
 }
 
 // ===== STORY QUEUE =====
-function StoryQueuePage({ navigate }) {
+function StoryQueuePage({ navigate, categories, subcategories }) {
   const [stories, setStories] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('')
+  const [catFilter, setCatFilter] = useState('')
+  const [subFilter, setSubFilter] = useState('')
   const [search, setSearch] = useState('')
+
+  const filteredSubs = subcategories.filter(s => s.category_id === catFilter)
 
   const loadStories = useCallback(async () => {
     setLoading(true)
     try {
       const params = new URLSearchParams()
-      if (filter) params.set('status', filter)
+      if (filter && filter !== 'all') params.set('status', filter)
+      if (catFilter) params.set('category_id', catFilter)
+      if (subFilter) params.set('subcategory_id', subFilter)
       if (search) params.set('search', search)
       const data = await api(`/stories?${params}`)
       setStories(data.stories || [])
     } catch (e) { console.error(e) }
     setLoading(false)
-  }, [filter, search])
+  }, [filter, catFilter, subFilter, search])
 
   useEffect(() => { loadStories() }, [loadStories])
 
@@ -389,6 +407,22 @@ function StoryQueuePage({ navigate }) {
             {STATUSES.map(s => <SelectItem key={s} value={s}>{s.replace(/_/g, ' ')}</SelectItem>)}
           </SelectContent>
         </Select>
+        <Select value={catFilter} onValueChange={(v) => { setCatFilter(v === 'all' ? '' : v); setSubFilter('') }}>
+          <SelectTrigger className="w-40"><SelectValue placeholder="All categories" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Categories</SelectItem>
+            {categories.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        {catFilter && filteredSubs.length > 0 && (
+          <Select value={subFilter} onValueChange={(v) => setSubFilter(v === 'all' ? '' : v)}>
+            <SelectTrigger className="w-44"><SelectValue placeholder="All subcategories" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Subcategories</SelectItem>
+              {filteredSubs.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
         <Button variant="outline" size="sm" onClick={loadStories}><Search className="h-4 w-4" /></Button>
       </div>
 
@@ -410,6 +444,7 @@ function StoryQueuePage({ navigate }) {
                     <h3 className="font-semibold text-gray-900 truncate">{story.source_title}</h3>
                     <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
                       {story.category_name && <span>{story.category_name}</span>}
+                      {story.subcategory_name && <span className="text-brand-gold">/ {story.subcategory_name}</span>}
                       {story.region && <span>{story.region}</span>}
                       {story.source_outlet && <span>via {story.source_outlet}</span>}
                       <span>{new Date(story.created_at).toLocaleDateString()}</span>
@@ -652,14 +687,28 @@ function StoryDetailPage({ storyId, navigate, categories }) {
 }
 
 // ===== ARTICLES LIST =====
-function ArticlesListPage({ navigate, published = false }) {
+function ArticlesListPage({ navigate, published = false, categories, subcategories }) {
   const [articles, setArticles] = useState([])
   const [loading, setLoading] = useState(true)
+  const [catFilter, setCatFilter] = useState('')
+  const [subFilter, setSubFilter] = useState('')
 
-  useEffect(() => {
-    api(`/articles?is_published=${published}`).then(data => setArticles(data.articles || []))
-      .catch(console.error).finally(() => setLoading(false))
-  }, [published])
+  const filteredSubs = (subcategories || []).filter(s => s.category_id === catFilter)
+
+  const loadArticles = useCallback(async () => {
+    setLoading(true)
+    try {
+      const params = new URLSearchParams()
+      params.set('is_published', String(published))
+      if (catFilter) params.set('category_id', catFilter)
+      if (subFilter) params.set('subcategory_id', subFilter)
+      const data = await api(`/articles?${params}`)
+      setArticles(data.articles || [])
+    } catch (e) { console.error(e) }
+    setLoading(false)
+  }, [published, catFilter, subFilter])
+
+  useEffect(() => { loadArticles() }, [loadArticles])
 
   const togglePublish = async (article) => {
     try {
@@ -672,43 +721,66 @@ function ArticlesListPage({ navigate, published = false }) {
 
   if (loading) return <div className="flex items-center justify-center h-48"><Loader2 className="h-8 w-8 animate-spin text-brand-gold" /></div>
 
-  return articles.length > 0 ? (
-    <div className="space-y-3">
-      {articles.map(article => (
-        <Card key={article.id} className="hover:shadow-md transition">
-          <CardContent className="py-4">
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex-1 min-w-0 cursor-pointer" onClick={() => navigate(`/dashboard/articles/${article.id}`)}>
-                <div className="flex items-center gap-2 mb-1">
-                  {article.is_published ? <Badge className="bg-green-600 text-white">Published</Badge> : <Badge variant="outline">Draft</Badge>}
-                  {article.category_name && <Badge variant="outline">{article.category_name}</Badge>}
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-3 items-center">
+        <Select value={catFilter} onValueChange={(v) => { setCatFilter(v === 'all' ? '' : v); setSubFilter('') }}>
+          <SelectTrigger className="w-44"><SelectValue placeholder="All categories" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Categories</SelectItem>
+            {(categories || []).map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        {catFilter && filteredSubs.length > 0 && (
+          <Select value={subFilter} onValueChange={(v) => setSubFilter(v === 'all' ? '' : v)}>
+            <SelectTrigger className="w-44"><SelectValue placeholder="All subcategories" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Subcategories</SelectItem>
+              {filteredSubs.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
+      {articles.length > 0 ? (
+        <div className="space-y-3">
+          {articles.map(article => (
+            <Card key={article.id} className="hover:shadow-md transition">
+              <CardContent className="py-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0 cursor-pointer" onClick={() => navigate(`/dashboard/articles/${article.id}`)}>
+                    <div className="flex items-center gap-2 mb-1">
+                      {article.is_published ? <Badge className="bg-green-600 text-white">Published</Badge> : <Badge variant="outline">Draft</Badge>}
+                      {article.category_name && <Badge variant="outline">{article.category_name}</Badge>}
+                      {article.subcategory_name && <span className="text-xs text-brand-gold">/ {article.subcategory_name}</span>}
+                    </div>
+                    <h3 className="font-semibold text-gray-900">{article.headline}</h3>
+                    <p className="text-gray-500 text-sm mt-1 line-clamp-1">{article.excerpt}</p>
+                    <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
+                      <span>{article.author_name}</span>
+                      {article.read_time > 0 && <span>{article.read_time} min read</span>}
+                      <span>{new Date(article.created_at).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 flex-shrink-0">
+                    <Button variant="outline" size="sm" onClick={() => navigate(`/dashboard/articles/${article.id}`)}><Edit className="h-4 w-4" /></Button>
+                    <Button variant="outline" size="sm" onClick={() => togglePublish(article)}>
+                      {article.is_published ? <Archive className="h-4 w-4" /> : <Globe className="h-4 w-4" />}
+                    </Button>
+                    {article.is_published && article.public_url && (
+                      <Button variant="outline" size="sm" onClick={() => window.open(article.public_url, '_blank')}><ExternalLink className="h-4 w-4" /></Button>
+                    )}
+                  </div>
                 </div>
-                <h3 className="font-semibold text-gray-900">{article.headline}</h3>
-                <p className="text-gray-500 text-sm mt-1 line-clamp-1">{article.excerpt}</p>
-                <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
-                  <span>{article.author_name}</span>
-                  {article.read_time > 0 && <span>{article.read_time} min read</span>}
-                  <span>{new Date(article.created_at).toLocaleDateString()}</span>
-                </div>
-              </div>
-              <div className="flex gap-2 flex-shrink-0">
-                <Button variant="outline" size="sm" onClick={() => navigate(`/dashboard/articles/${article.id}`)}><Edit className="h-4 w-4" /></Button>
-                <Button variant="outline" size="sm" onClick={() => togglePublish(article)}>
-                  {article.is_published ? <Archive className="h-4 w-4" /> : <Globe className="h-4 w-4" />}
-                </Button>
-                {article.is_published && article.public_url && (
-                  <Button variant="outline" size="sm" onClick={() => window.open(article.public_url, '_blank')}><ExternalLink className="h-4 w-4" /></Button>
-                )}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  ) : (
-    <div className="text-center py-16">
-      <FileText className="h-16 w-16 text-gray-200 mx-auto mb-4" />
-      <p className="text-gray-500 text-lg">{published ? 'No published articles yet' : 'No draft articles yet'}</p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-16">
+          <FileText className="h-16 w-16 text-gray-200 mx-auto mb-4" />
+          <p className="text-gray-500 text-lg">{published ? 'No published articles yet' : 'No draft articles yet'}</p>
+        </div>
+      )}
     </div>
   )
 }
@@ -1033,56 +1105,118 @@ function VideoBoardPage({ navigate }) {
 }
 
 // ===== CATEGORIES PAGE =====
-function CategoriesPage() {
-  const [categories, setCategories] = useState([])
-  const [loading, setLoading] = useState(true)
+function CategoriesPage({ categories, subcategories, onRefresh }) {
+  const [loading, setLoading] = useState(false)
   const [newCat, setNewCat] = useState('')
+  const [newSubName, setNewSubName] = useState('')
+  const [newSubCatId, setNewSubCatId] = useState('')
+  const [expandedCat, setExpandedCat] = useState('')
 
-  const load = async () => {
+  const addCat = async () => {
+    if (!newCat.trim()) return
+    setLoading(true)
     try {
-      const data = await api('/categories')
-      setCategories(data || [])
+      await api('/categories', { method: 'POST', body: JSON.stringify({ name: newCat.trim(), order: (categories || []).length + 1 }) })
+      setNewCat('')
+      onRefresh()
     } catch (e) { console.error(e) }
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [])
-
-  const addCat = async () => {
-    if (!newCat.trim()) return
-    try {
-      await api('/categories', { method: 'POST', body: JSON.stringify({ name: newCat.trim(), order: categories.length + 1 }) })
-      setNewCat('')
-      load()
-    } catch (e) { console.error(e) }
-  }
-
   const deleteCat = async (id) => {
-    if (!confirm('Delete this category?')) return
+    if (!confirm('Delete this category and all its subcategories?')) return
     try {
+      // Delete subcategories first
+      const subs = (subcategories || []).filter(s => s.category_id === id)
+      for (const sub of subs) {
+        await api(`/subcategories/${sub.id}`, { method: 'DELETE' })
+      }
       await api(`/categories/${id}`, { method: 'DELETE' })
-      load()
+      onRefresh()
     } catch (e) { console.error(e) }
   }
 
-  if (loading) return <div className="flex items-center justify-center h-48"><Loader2 className="h-8 w-8 animate-spin text-brand-gold" /></div>
+  const addSub = async () => {
+    if (!newSubName.trim() || !newSubCatId) return
+    setLoading(true)
+    try {
+      const subs = (subcategories || []).filter(s => s.category_id === newSubCatId)
+      await api('/subcategories', {
+        method: 'POST',
+        body: JSON.stringify({ name: newSubName.trim(), category_id: newSubCatId, order: subs.length + 1 })
+      })
+      setNewSubName('')
+      onRefresh()
+    } catch (e) { console.error(e) }
+    setLoading(false)
+  }
+
+  const deleteSub = async (id) => {
+    if (!confirm('Delete this subcategory?')) return
+    try {
+      await api(`/subcategories/${id}`, { method: 'DELETE' })
+      onRefresh()
+    } catch (e) { console.error(e) }
+  }
 
   return (
-    <div className="max-w-2xl space-y-6">
-      <div className="flex gap-2">
-        <Input placeholder="New category name" value={newCat} onChange={e => setNewCat(e.target.value)} onKeyDown={e => e.key === 'Enter' && addCat()} />
-        <Button onClick={addCat} className="bg-brand-gold text-brand-navy">Add</Button>
-      </div>
-      <div className="space-y-2">
-        {categories.map(cat => (
-          <div key={cat.id} className="flex items-center justify-between p-3 bg-white rounded-lg border">
-            <div>
-              <span className="font-medium">{cat.name}</span>
-              <span className="text-gray-400 text-sm ml-2">/{cat.slug}</span>
-            </div>
-            <Button variant="ghost" size="sm" onClick={() => deleteCat(cat.id)}><Trash2 className="h-4 w-4 text-gray-400" /></Button>
+    <div className="max-w-3xl space-y-6">
+      <Card>
+        <CardHeader><CardTitle className="text-base">Add Category</CardTitle></CardHeader>
+        <CardContent>
+          <div className="flex gap-2">
+            <Input placeholder="New category name" value={newCat} onChange={e => setNewCat(e.target.value)} onKeyDown={e => e.key === 'Enter' && addCat()} />
+            <Button onClick={addCat} className="bg-brand-gold text-brand-navy" disabled={loading}>Add</Button>
           </div>
-        ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="text-base">Add Subcategory</CardTitle></CardHeader>
+        <CardContent>
+          <div className="flex gap-2">
+            <Select value={newSubCatId} onValueChange={setNewSubCatId}>
+              <SelectTrigger className="w-48"><SelectValue placeholder="Parent category" /></SelectTrigger>
+              <SelectContent>{(categories || []).map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
+            </Select>
+            <Input placeholder="Subcategory name" value={newSubName} onChange={e => setNewSubName(e.target.value)} className="flex-1" onKeyDown={e => e.key === 'Enter' && addSub()} />
+            <Button onClick={addSub} className="bg-brand-gold text-brand-navy" disabled={loading || !newSubCatId}>Add</Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="space-y-3">
+        {(categories || []).map(cat => {
+          const catSubs = (subcategories || []).filter(s => s.category_id === cat.id)
+          const isExpanded = expandedCat === cat.id
+          return (
+            <Card key={cat.id}>
+              <CardContent className="py-3">
+                <div className="flex items-center justify-between">
+                  <button className="flex items-center gap-2 text-left flex-1" onClick={() => setExpandedCat(isExpanded ? '' : cat.id)}>
+                    <ChevronRight className={`h-4 w-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                    <span className="font-semibold">{cat.name}</span>
+                    <Badge variant="outline" className="text-xs">{catSubs.length} subcategories</Badge>
+                  </button>
+                  <Button variant="ghost" size="sm" onClick={() => deleteCat(cat.id)}><Trash2 className="h-4 w-4 text-gray-400" /></Button>
+                </div>
+                {isExpanded && catSubs.length > 0 && (
+                  <div className="mt-3 ml-6 space-y-1">
+                    {catSubs.map(sub => (
+                      <div key={sub.id} className="flex items-center justify-between py-1.5 px-3 bg-gray-50 rounded-md text-sm">
+                        <span>{sub.name}</span>
+                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => deleteSub(sub.id)}><Trash2 className="h-3 w-3 text-gray-400" /></Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {isExpanded && catSubs.length === 0 && (
+                  <p className="mt-3 ml-6 text-sm text-gray-400">No subcategories</p>
+                )}
+              </CardContent>
+            </Card>
+          )
+        })}
       </div>
     </div>
   )
@@ -1362,6 +1496,7 @@ export default function DashboardApp() {
   const [user, setUser] = useState(null)
   const [authChecked, setAuthChecked] = useState(false)
   const [categories, setCategories] = useState([])
+  const [subcategories, setSubcategories] = useState([])
   const [seeded, setSeeded] = useState(false)
   const pathname = path.split('?')[0]
 
@@ -1389,10 +1524,11 @@ export default function DashboardApp() {
     }
   }, [seeded])
 
-  // Load categories when authenticated
+  // Load categories and subcategories when authenticated
   useEffect(() => {
     if (token) {
       api('/categories').then(setCategories).catch(console.error)
+      api('/subcategories').then(setSubcategories).catch(console.error)
     }
   }, [token])
 
@@ -1418,21 +1554,21 @@ export default function DashboardApp() {
 
   if (pathname === '/dashboard/stories/new') {
     title = 'New Story'
-    content = <NewStoryPage navigate={navigate} categories={categories} />
+    content = <NewStoryPage navigate={navigate} categories={categories} subcategories={subcategories} />
   } else if (pathname === '/dashboard/stories' && !pathname.includes('/dashboard/stories/')) {
     title = 'Story Queue'
-    content = <StoryQueuePage navigate={navigate} />
+    content = <StoryQueuePage navigate={navigate} categories={categories} subcategories={subcategories} />
     actions = <Button size="sm" onClick={() => navigate('/dashboard/stories/new')} className="bg-brand-gold text-brand-navy"><PlusCircle className="h-4 w-4 mr-1" />New Story</Button>
   } else if (pathname.match(/^\/dashboard\/stories\/[^\/]+$/)) {
     const storyId = pathname.split('/dashboard/stories/')[1]
     title = 'Story Detail'
-    content = <StoryDetailPage storyId={storyId} navigate={navigate} categories={categories} />
+    content = <StoryDetailPage storyId={storyId} navigate={navigate} categories={categories} subcategories={subcategories} />
   } else if (pathname === '/dashboard/articles/published') {
     title = 'Published Articles'
-    content = <ArticlesListPage navigate={navigate} published={true} />
+    content = <ArticlesListPage navigate={navigate} published={true} categories={categories} subcategories={subcategories} />
   } else if (pathname === '/dashboard/articles' && !pathname.includes('/dashboard/articles/')) {
     title = 'Draft Articles'
-    content = <ArticlesListPage navigate={navigate} published={false} />
+    content = <ArticlesListPage navigate={navigate} published={false} categories={categories} subcategories={subcategories} />
   } else if (pathname.match(/^\/dashboard\/articles\/[^\/]+$/) && !pathname.includes('published')) {
     const articleId = pathname.split('/dashboard/articles/')[1]
     title = 'Article Editor'
@@ -1449,7 +1585,10 @@ export default function DashboardApp() {
     content = <VideoBoardPage navigate={navigate} />
   } else if (pathname === '/dashboard/categories') {
     title = 'Categories'
-    content = <CategoriesPage />
+    content = <CategoriesPage categories={categories} subcategories={subcategories} onRefresh={() => {
+      api('/categories').then(setCategories).catch(console.error)
+      api('/subcategories').then(setSubcategories).catch(console.error)
+    }} />
   } else if (pathname === '/dashboard/sheets') {
     title = 'Google Sheets Sync'
     content = <SheetsPage />

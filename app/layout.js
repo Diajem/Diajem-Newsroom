@@ -2,8 +2,12 @@ import './globals.css'
 
 export const metadata = {
   title: 'Diajem Global Black News',
-  description: 'International news coverage for Africa, Caribbean, Diaspora, Sports, AI & Technology, Finance, Travel, Culture, and Health & Wellbeing',
-  keywords: 'Africa news, Caribbean news, Black news, Diaspora, international news',
+  description: 'Africa-first, Black-world focused global newsroom covering politics, business, culture, sports, and technology across the African continent, Caribbean, and diaspora.',
+  keywords: 'Africa news, Caribbean news, Black news, Diaspora, international news, African business, Black culture, African politics',
+  icons: {
+    icon: '/images/logo-shield.png',
+    apple: '/images/logo-shield.png',
+  },
 }
 
 export default function RootLayout({ children }) {

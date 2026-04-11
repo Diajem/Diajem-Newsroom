@@ -52,6 +52,51 @@ function slugify(text) {
   return text.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').substring(0, 100)
 }
 
+// AI Provider fallback system: try OpenAI first, then DeepSeek if OpenAI fails
+async function callAI(messages, options = {}) {
+  const { temperature = 0.7, max_tokens = 4000 } = options
+  const OpenAI = (await import('openai')).default
+  
+  // Primary provider: OpenAI via Emergent
+  try {
+    const openai = new OpenAI({
+      apiKey: process.env.EMERGENT_LLM_KEY,
+      baseURL: process.env.EMERGENT_LLM_BASE_URL,
+    })
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages,
+      temperature,
+      max_tokens,
+    })
+    return { success: true, content: completion.choices[0].message.content, provider: 'OpenAI' }
+  } catch (primaryError) {
+    console.error('OpenAI provider failed:', primaryError.message)
+    
+    // Secondary provider: DeepSeek fallback
+    if (process.env.DEEPSEEK_API_KEY) {
+      try {
+        const deepseek = new OpenAI({
+          apiKey: process.env.DEEPSEEK_API_KEY,
+          baseURL: 'https://api.deepseek.com',
+        })
+        const completion = await deepseek.chat.completions.create({
+          model: 'deepseek-chat',
+          messages,
+          temperature,
+          max_tokens,
+        })
+        return { success: true, content: completion.choices[0].message.content, provider: 'DeepSeek' }
+      } catch (fallbackError) {
+        console.error('DeepSeek fallback failed:', fallbackError.message)
+        return { success: false, error: `All AI providers failed. Primary: ${primaryError.message}, Fallback: ${fallbackError.message}` }
+      }
+    } else {
+      return { success: false, error: `OpenAI failed: ${primaryError.message}. No fallback provider configured (DEEPSEEK_API_KEY not set).` }
+    }
+  }
+}
+
 async function handleRoute(request, { params }) {
   const { path = [] } = params
   const route = `/${path.join('/')}`
@@ -129,6 +174,51 @@ async function handleRoute(request, { params }) {
       return json({ success: true })
     }
 
+    // ===== SUBCATEGORIES =====
+    if (route === '/subcategories' && method === 'GET') {
+      const user = await authenticate(request, db)
+      if (!user) return err('Unauthorized', 401)
+      const filter = {}
+      if (sp.category_id) filter.category_id = sp.category_id
+      const subs = await db.collection('subcategories').find(filter).sort({ order: 1 }).toArray()
+      return json(subs.map(({ _id, ...s }) => s))
+    }
+
+    if (route === '/subcategories' && method === 'POST') {
+      const user = await authenticate(request, db)
+      if (!user) return err('Unauthorized', 401)
+      const body = await request.json()
+      if (!body.name || !body.category_id) return err('name and category_id required')
+      const sub = {
+        id: uuidv4(), name: body.name, slug: slugify(body.name),
+        category_id: body.category_id, order: body.order || 0, created_at: new Date()
+      }
+      await db.collection('subcategories').insertOne(sub)
+      const { _id, ...clean } = sub
+      return json(clean, 201)
+    }
+
+    const subMatch = route.match(/^\/subcategories\/([^\/]+)$/)
+    if (subMatch && method === 'PUT') {
+      const user = await authenticate(request, db)
+      if (!user) return err('Unauthorized', 401)
+      const body = await request.json()
+      const updates = { ...body }
+      if (body.name) updates.slug = slugify(body.name)
+      await db.collection('subcategories').updateOne({ id: subMatch[1] }, { $set: updates })
+      const sub = await db.collection('subcategories').findOne({ id: subMatch[1] })
+      if (!sub) return err('Subcategory not found', 404)
+      const { _id, ...clean } = sub
+      return json(clean)
+    }
+
+    if (subMatch && method === 'DELETE') {
+      const user = await authenticate(request, db)
+      if (!user) return err('Unauthorized', 401)
+      await db.collection('subcategories').deleteOne({ id: subMatch[1] })
+      return json({ success: true })
+    }
+
     // ===== STORIES =====
     if (route === '/stories' && method === 'GET') {
       const user = await authenticate(request, db)
@@ -136,6 +226,7 @@ async function handleRoute(request, { params }) {
       const filter = {}
       if (sp.status) filter.status = sp.status
       if (sp.category_id) filter.category_id = sp.category_id
+      if (sp.subcategory_id) filter.subcategory_id = sp.subcategory_id
       if (sp.content_type) filter.content_type = sp.content_type
       if (sp.search) filter.$or = [
         { source_title: { $regex: sp.search, $options: 'i' } },
@@ -163,7 +254,8 @@ async function handleRoute(request, { params }) {
         source_notes: body.source_notes || '',
         category_id: body.category_id || '',
         category_name: body.category_name || '',
-        subcategory: body.subcategory || '',
+        subcategory_id: body.subcategory_id || '',
+        subcategory_name: body.subcategory_name || '',
         region: body.region || '',
         country: body.country || '',
         content_type: body.content_type || 'Breaking News',
@@ -232,6 +324,7 @@ async function handleRoute(request, { params }) {
       if (sp.is_published === 'true') filter.is_published = true
       if (sp.is_published === 'false') filter.is_published = false
       if (sp.category_id) filter.category_id = sp.category_id
+      if (sp.subcategory_id) filter.subcategory_id = sp.subcategory_id
       if (sp.search) filter.$or = [
         { headline: { $regex: sp.search, $options: 'i' } },
         { excerpt: { $regex: sp.search, $options: 'i' } }
@@ -256,7 +349,8 @@ async function handleRoute(request, { params }) {
         canonical_url: body.canonical_url || '',
         author_name: body.author_name || user.name || 'Diajem News',
         read_time: body.read_time || 0, category_id: body.category_id || '',
-        category_name: body.category_name || '', featured_image_url: body.featured_image_url || '',
+        category_name: body.category_name || '', subcategory_id: body.subcategory_id || '',
+        subcategory_name: body.subcategory_name || '', featured_image_url: body.featured_image_url || '',
         is_published: false, public_url: '', slug: slugify(body.headline || 'untitled'),
         created_at: new Date(), updated_at: new Date(), published_at: null
       }
@@ -437,31 +531,25 @@ async function handleRoute(request, { params }) {
       const story = await db.collection('stories').findOne({ id: story_id })
       if (!story) return err('Story not found', 404)
 
-      const OpenAI = (await import('openai')).default
-      const openai = new OpenAI({
-        apiKey: process.env.EMERGENT_LLM_KEY,
-        baseURL: process.env.EMERGENT_LLM_BASE_URL,
-      })
+      const messages = [
+        {
+          role: 'system',
+          content: 'You are a senior news journalist for Diajem Global Black News, an international news platform focusing on Africa, Caribbean, Diaspora, Sports, AI & Technology, Finance, Travel, Culture, and Health & Wellbeing. Rewrite the following source material into a professional, original news article. You must respond ONLY with a valid JSON object (no markdown code fences, no extra text) with these exact fields: headline (string), excerpt (2-3 sentence summary string), body_html (complete article in HTML with <p>, <h2>, <h3> tags, well-structured with multiple paragraphs), seo_title (string), meta_description (string max 160 chars), read_time (number in minutes).'
+        },
+        {
+          role: 'user',
+          content: `Source Title: ${story.source_title}\nSource Outlet: ${story.source_outlet || 'Unknown'}\nSource Content:\n${story.source_text}\nCategory: ${story.category_name || 'General'}\nRegion: ${story.region || 'Global'}\nCountry: ${story.country || 'N/A'}`
+        }
+      ]
 
-      const completion = await openai.chat.completions.create({
-        model: 'gpt-4o',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a senior news journalist for Diajem Global Black News, an international news platform focusing on Africa, Caribbean, Diaspora, Sports, AI & Technology, Finance, Travel, Culture, and Health & Wellbeing. Rewrite the following source material into a professional, original news article. You must respond ONLY with a valid JSON object (no markdown code fences, no extra text) with these exact fields: headline (string), excerpt (2-3 sentence summary string), body_html (complete article in HTML with <p>, <h2>, <h3> tags, well-structured with multiple paragraphs), seo_title (string), meta_description (string max 160 chars), read_time (number in minutes).'
-          },
-          {
-            role: 'user',
-            content: `Source Title: ${story.source_title}\nSource Outlet: ${story.source_outlet || 'Unknown'}\nSource Content:\n${story.source_text}\nCategory: ${story.category_name || 'General'}\nRegion: ${story.region || 'Global'}\nCountry: ${story.country || 'N/A'}`
-          }
-        ],
-        temperature: 0.7,
-        max_tokens: 4000,
-      })
+      const aiResponse = await callAI(messages, { temperature: 0.7, max_tokens: 4000 })
+      if (!aiResponse.success) {
+        return err(aiResponse.error, 500)
+      }
 
       let result
       try {
-        let content = completion.choices[0].message.content
+        let content = aiResponse.content
         content = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
         result = JSON.parse(content)
       } catch (e) {
@@ -477,6 +565,7 @@ async function handleRoute(request, { params }) {
         tags: story.tags || [], canonical_url: '',
         author_name: user.name || 'Diajem News', read_time: result.read_time || 5,
         category_id: story.category_id, category_name: story.category_name || '',
+        subcategory_id: story.subcategory_id || '', subcategory_name: story.subcategory_name || '',
         featured_image_url: story.featured_image_url || '',
         is_published: false, public_url: '',
         slug: slugify(result.headline || story.source_title),
@@ -506,31 +595,25 @@ async function handleRoute(request, { params }) {
       const article = await db.collection('articles').findOne({ id: article_id })
       if (!article) return err('Article not found', 404)
 
-      const OpenAI = (await import('openai')).default
-      const openai = new OpenAI({
-        apiKey: process.env.EMERGENT_LLM_KEY,
-        baseURL: process.env.EMERGENT_LLM_BASE_URL,
-      })
+      const messages = [
+        {
+          role: 'system',
+          content: 'You are a video script writer for Diajem Global Black News. Create a complete video production script package. Respond ONLY with a valid JSON object (no markdown code fences, no extra text) with these exact fields: script_title (string), short_hook (15 words max string), full_script (complete anchor script with [PAUSE] [EMPHASIS] marks string), anchor_intro (10-15 second intro string), lower_thirds (names/titles for overlays string), on_screen_text (key bullet points string), thumbnail_text (5-7 words string), youtube_description (string), youtube_tags (comma-separated string), podcast_intro (podcast opening string), podcast_version (full podcast adaptation string).'
+        },
+        {
+          role: 'user',
+          content: `Article: ${article.headline}\nExcerpt: ${article.excerpt}\nContent:\n${article.body_html}\nCategory: ${article.category_name || 'General'}`
+        }
+      ]
 
-      const completion = await openai.chat.completions.create({
-        model: 'gpt-4o',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a video script writer for Diajem Global Black News. Create a complete video production script package. Respond ONLY with a valid JSON object (no markdown code fences, no extra text) with these exact fields: script_title (string), short_hook (15 words max string), full_script (complete anchor script with [PAUSE] [EMPHASIS] marks string), anchor_intro (10-15 second intro string), lower_thirds (names/titles for overlays string), on_screen_text (key bullet points string), thumbnail_text (5-7 words string), youtube_description (string), youtube_tags (comma-separated string), podcast_intro (podcast opening string), podcast_version (full podcast adaptation string).'
-          },
-          {
-            role: 'user',
-            content: `Article: ${article.headline}\nExcerpt: ${article.excerpt}\nContent:\n${article.body_html}\nCategory: ${article.category_name || 'General'}`
-          }
-        ],
-        temperature: 0.7,
-        max_tokens: 4000,
-      })
+      const aiResponse = await callAI(messages, { temperature: 0.7, max_tokens: 4000 })
+      if (!aiResponse.success) {
+        return err(aiResponse.error, 500)
+      }
 
       let result
       try {
-        let content = completion.choices[0].message.content
+        let content = aiResponse.content
         content = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
         result = JSON.parse(content)
       } catch (e) {
@@ -603,6 +686,13 @@ async function handleRoute(request, { params }) {
       return json(cats.map(({ _id, ...c }) => c))
     }
 
+    if (route === '/public/subcategories' && method === 'GET') {
+      const filter = {}
+      if (sp.category_id) filter.category_id = sp.category_id
+      const subs = await db.collection('subcategories').find(filter).sort({ order: 1 }).toArray()
+      return json(subs.map(({ _id, ...s }) => s))
+    }
+
     if (route === '/public/search' && method === 'GET') {
       const q = sp.q || ''
       if (!q) return json({ articles: [], total: 0 })
@@ -666,6 +756,40 @@ async function handleRoute(request, { params }) {
           })
         }
       }
+
+      // Seed subcategories
+      const existingSubs = await db.collection('subcategories').countDocuments()
+      if (existingSubs === 0) {
+        const allCats = await db.collection('categories').find({}).toArray()
+        const catMap = {}
+        allCats.forEach(c => { catMap[c.name] = c.id })
+
+        const subcategories = {
+          'Africa': ['Nigeria', 'Kenya', 'Ethiopia', 'Ghana', 'South Africa', 'African Union', 'Security & Conflict', 'Politics', 'Business', 'Development'],
+          'Caribbean': ['Jamaica', 'Trinidad & Tobago', 'Barbados', 'Haiti', 'Dominican Republic', 'Cuba', 'Tourism', 'Energy', 'Culture', 'Regional Affairs'],
+          'Diaspora': ['UK', 'USA', 'Canada', 'Europe', 'Black Business', 'Black Communities', 'Immigration', 'Education', 'Race & Identity', 'Culture'],
+          'Sports': ['Football', 'Premier League', 'La Liga', 'Serie A', 'Bundesliga', 'Ligue 1', 'Champions League', 'Europa League', 'Conference League', 'AFCON', 'World Cup', 'African Football', 'Transfers', 'Match Reports'],
+          'AI & Technology': ['AI Tools', 'Startups', 'Big Tech', 'Innovation', 'Policy', 'Robotics'],
+          'Finance': ['Markets', 'Personal Finance', 'African Business', 'Caribbean Economy', 'Diaspora Wealth', 'Startups', 'Investing'],
+          'Travel': ['Destinations', 'Hotels', 'Airlines', 'Visa & Migration', 'African Travel', 'Caribbean Travel'],
+          'Culture': ['Music', 'Film', 'Fashion', 'Food', 'Literature', 'Heritage'],
+          'Health & Wellbeing': ['Public Health', 'Mental Health', 'Nutrition', 'Fitness', 'Healthcare Systems'],
+          'Diajem TV': ['Interviews', 'Reports', 'Documentaries', 'News Bulletins'],
+          'Podcast': ['Interviews', 'Analysis', 'Special Series']
+        }
+
+        for (const [catName, subs] of Object.entries(subcategories)) {
+          const categoryId = catMap[catName]
+          if (!categoryId) continue
+          for (let i = 0; i < subs.length; i++) {
+            await db.collection('subcategories').insertOne({
+              id: uuidv4(), name: subs[i], slug: slugify(subs[i]),
+              category_id: categoryId, order: i + 1, created_at: new Date()
+            })
+          }
+        }
+      }
+
       const adminExists = await db.collection('users').findOne({ email: 'admin@diajemnews.com' })
       if (!adminExists) {
         await db.collection('users').insertOne({
@@ -677,13 +801,16 @@ async function handleRoute(request, { params }) {
       try {
         await db.collection('stories').createIndex({ status: 1 })
         await db.collection('stories').createIndex({ category_id: 1 })
+        await db.collection('stories').createIndex({ subcategory_id: 1 })
         await db.collection('stories').createIndex({ created_at: -1 })
         await db.collection('articles').createIndex({ is_published: 1 })
         await db.collection('articles').createIndex({ slug: 1 })
         await db.collection('articles').createIndex({ category_id: 1 })
+        await db.collection('articles').createIndex({ subcategory_id: 1 })
         await db.collection('articles').createIndex({ story_id: 1 })
         await db.collection('scripts').createIndex({ story_id: 1 })
         await db.collection('scripts').createIndex({ article_id: 1 })
+        await db.collection('subcategories').createIndex({ category_id: 1 })
       } catch (e) { /* indexes may already exist */ }
       return json({ message: 'Database seeded successfully' })
     }

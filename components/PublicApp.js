@@ -193,7 +193,7 @@ function HomePage() {
           api('/public/articles?limit=30'),
           api('/public/categories')
         ])
-        setArticles(articlesData || [])
+        setArticles(articlesData?.articles || [])
         setCategories(catsData || [])
       } catch (e) {
         console.error(e)

@@ -529,8 +529,8 @@ async function handleRoute(request, { params }) {
       
       try {
         const channels = [
-          { handle: '@diajemsports', channelId: 'UCYourSportsChannelId', subcategory: 'Sports' },
-          { handle: '@diajemnews', channelId: 'UCYourNewsChannelId', subcategory: 'News' }
+          { handle: '@diajemsports', channelId: 'UCz3Lwos2rCl9wjRpZUit23Q', subcategory: 'Sports' },
+          { handle: '@diajemnews', channelId: 'UCGfyiumaaLiA7-KcZh_2TjQ', subcategory: 'News' }
         ]
         
         let syncedCount = 0

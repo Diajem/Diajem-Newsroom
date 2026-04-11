@@ -507,7 +507,7 @@ function ArticlePage({ slug }) {
           <div className="prose prose-lg max-w-none mb-8" dangerouslySetInnerHTML={{ __html: article.body_html }} />
 
           {/* Mid-Article Related Stories */}
-          {relatedArticles[0] && (
+          {Array.isArray(relatedArticles) && relatedArticles.length > 0 && relatedArticles[0] && (
             <div className="bg-gray-50 border-l-4 border-yellow-500 p-6 my-8">
               <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Related Reading</p>
               <button onClick={() => navigate(`/article/${relatedArticles[0].slug}`)} className="group">
@@ -534,7 +534,7 @@ function ArticlePage({ slug }) {
           <AdInline zone="Article End Ad (Before Related)" />
 
           {/* Related Articles */}
-          {relatedArticles.length > 0 && (
+          {Array.isArray(relatedArticles) && relatedArticles.length > 0 && (
             <div className="mt-12">
               <h2 className="text-2xl font-bold text-gray-900 mb-6 border-b-2 border-yellow-500 pb-2">Related Stories</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -559,17 +559,19 @@ function ArticlePage({ slug }) {
           <AdSidebar zone="Article Sidebar Ad 1" />
 
           {/* More from Category */}
-          <div className="bg-gray-50 p-6 rounded">
-            <h3 className="text-lg font-bold text-gray-900 mb-4 border-b-2 border-yellow-500 pb-2">More from {article.category_name}</h3>
-            <div className="space-y-4">
-              {relatedArticles.slice(0, 5).map(related => (
-                <button key={related.id} onClick={() => navigate(`/article/${related.slug}`)} className="group block text-left border-b border-gray-200 pb-3">
-                  <h4 className="font-semibold text-sm text-gray-900 group-hover:text-yellow-700 transition line-clamp-3 mb-1">{related.headline}</h4>
-                  <span className="text-xs text-gray-500">{new Date(related.published_at || related.created_at).toLocaleDateString()}</span>
-                </button>
-              ))}
+          {Array.isArray(relatedArticles) && relatedArticles.length > 0 && (
+            <div className="bg-gray-50 p-6 rounded">
+              <h3 className="text-lg font-bold text-gray-900 mb-4 border-b-2 border-yellow-500 pb-2">More from {article.category_name}</h3>
+              <div className="space-y-4">
+                {relatedArticles.slice(0, 5).map(related => (
+                  <button key={related.id} onClick={() => navigate(`/article/${related.slug}`)} className="group block text-left border-b border-gray-200 pb-3">
+                    <h4 className="font-semibold text-sm text-gray-900 group-hover:text-yellow-700 transition line-clamp-3 mb-1">{related.headline}</h4>
+                    <span className="text-xs text-gray-500">{new Date(related.published_at || related.created_at).toLocaleDateString()}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Ad Widget 2 */}
           <AdSidebar zone="Article Sidebar Ad 2" />
@@ -640,7 +642,7 @@ function CategoryPage({ slug }) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {articles.map(article => (
+            {Array.isArray(articles) && articles.map(article => (
               <button key={article.id} onClick={() => navigate(`/article/${article.slug}`)} className="group block text-left">
                 <div className="relative h-56 bg-gray-200 mb-4 overflow-hidden">
                   <img src={getImageUrl(article)} alt={article.headline} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />
@@ -656,7 +658,7 @@ function CategoryPage({ slug }) {
             ))}
           </div>
 
-          {articles.length === 0 && (
+          {(!Array.isArray(articles) || articles.length === 0) && (
             <p className="text-center text-gray-500 py-12">No articles found in this category.</p>
           )}
         </div>
@@ -707,11 +709,11 @@ function SearchPage({ query }) {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Search Results</h1>
-        <p className="text-gray-600">Found {articles.length} results for "{query}"</p>
+        <p className="text-gray-600">Found {Array.isArray(articles) ? articles.length : 0} results for "{query}"</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {articles.map(article => (
+        {Array.isArray(articles) && articles.map(article => (
           <button key={article.id} onClick={() => navigate(`/article/${article.slug}`)} className="group block text-left">
             <div className="relative h-48 bg-gray-200 mb-3 overflow-hidden">
               <img src={getImageUrl(article)} alt={article.headline} className="w-full h-full object-cover group-hover:scale-105 transition" />
@@ -723,7 +725,7 @@ function SearchPage({ query }) {
         ))}
       </div>
 
-      {articles.length === 0 && (
+      {(!Array.isArray(articles) || articles.length === 0) && (
         <div className="text-center py-12">
           <p className="text-gray-500 mb-4">No results found for your search.</p>
           <Button onClick={() => navigate('/')}>Back to Homepage</Button>

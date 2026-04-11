@@ -1285,10 +1285,15 @@ function AdsPage({ navigate }) {
                   <Switch checked={ad.is_active} onCheckedChange={() => toggleActive(ad)} />
                 </div>
                 {ad.link_url && <p className="text-xs text-gray-500 truncate">{ad.link_url}</p>}
+                {ad.ad_type === 'code' && <p className="text-xs text-gray-400 italic">Code/Embed Ad</p>}
                 <div className="flex gap-1 mt-2">
                   <Button size="sm" variant="outline" onClick={() => editAd(ad)} className="text-xs h-7"><Edit className="h-3 w-3 mr-1" />Edit</Button>
                   <Button size="sm" variant="outline" onClick={() => deleteAd(ad.id)} className="text-xs h-7"><Trash2 className="h-3 w-3 mr-1" />Delete</Button>
-                  {ad.link_url && <Button size="sm" variant="outline" asChild className="text-xs h-7"><a href={ad.link_url} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-3 w-3" /></a></Button>}
+                  {ad.link_url && (
+                    <a href={ad.link_url} target="_blank" rel="noopener noreferrer">
+                      <Button size="sm" variant="outline" className="text-xs h-7"><ExternalLink className="h-3 w-3" /></Button>
+                    </a>
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -1657,6 +1662,8 @@ function SettingsPage() {
   const [loading, setLoading] = useState(true)
   const [siteName, setSiteName] = useState('Diajem Global Black News')
   const [siteDesc, setSiteDesc] = useState('')
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState(null)
 
   useEffect(() => {
     api('/settings').then(data => {
@@ -1674,6 +1681,21 @@ function SettingsPage() {
     } catch (e) { console.error(e) }
   }
 
+  const syncYouTube = async () => {
+    setSyncing(true)
+    setSyncResult(null)
+    try {
+      const result = await api('/youtube/sync', { method: 'POST' })
+      setSyncResult(result)
+      alert(`Success! Synced ${result.count} new videos from YouTube.`)
+    } catch (e) {
+      console.error(e)
+      alert('YouTube sync failed: ' + e.message)
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   if (loading) return <div className="flex items-center justify-center h-48"><Loader2 className="h-8 w-8 animate-spin text-brand-gold" /></div>
 
   return (
@@ -1684,6 +1706,28 @@ function SettingsPage() {
           <div><Label>Site Name</Label><Input value={siteName} onChange={e => setSiteName(e.target.value)} /></div>
           <div><Label>Site Description</Label><Textarea value={siteDesc} onChange={e => setSiteDesc(e.target.value)} rows={3} /></div>
           <Button onClick={save} className="bg-brand-gold text-brand-navy">Save Settings</Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>YouTube Integration</CardTitle>
+          <p className="text-sm text-gray-500 mt-1">Sync videos from your YouTube channels to Diajem TV category</p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <p className="text-sm"><strong>Connected Channels:</strong></p>
+            <ul className="text-sm text-gray-600 space-y-1">
+              <li>• @diajemnews → Diajem TV (News)</li>
+              <li>• @diajemsports → Diajem TV (Sports)</li>
+            </ul>
+          </div>
+          <Button onClick={syncYouTube} disabled={syncing} className="bg-brand-gold text-brand-navy">
+            {syncing ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Syncing...</> : 'Sync YouTube Videos'}
+          </Button>
+          {syncResult && (
+            <p className="text-sm text-green-600">✓ {syncResult.message}</p>
+          )}
         </CardContent>
       </Card>
     </div>

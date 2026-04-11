@@ -17,7 +17,7 @@ import {
   LayoutDashboard, PlusCircle, List, FileText, Globe, Film, Kanban,
   Tags, Sheet, Image, Settings, LogOut, Loader2, Trash2, Eye, Edit,
   Sparkles, ArrowLeft, ExternalLink, ChevronRight, Search, Clock, Zap,
-  BarChart3, TrendingUp, Activity, CheckCircle, AlertCircle, Archive
+  BarChart3, TrendingUp, Activity, CheckCircle, AlertCircle, Archive, DollarSign
 } from 'lucide-react'
 
 const CONTENT_TYPES = ['Breaking News', 'News Analysis', 'Feature', 'Documentary', 'Explainer', 'Interview', 'Special Report', 'Video Script', 'Podcast Script']
@@ -89,6 +89,7 @@ function Sidebar({ currentPath, navigate, user, onLogout }) {
     { path: '/dashboard/articles/published', icon: Globe, label: 'Published' },
     { path: '/dashboard/scripts', icon: Film, label: 'Script Studio' },
     { path: '/dashboard/video', icon: Kanban, label: 'Video Board' },
+    { path: '/dashboard/ads', icon: DollarSign, label: 'Advertisements' },
     { path: '/dashboard/categories', icon: Tags, label: 'Categories' },
     { path: '/dashboard/sheets', icon: Sheet, label: 'Sheets Sync' },
     { path: '/dashboard/media', icon: Image, label: 'Media Library' },
@@ -1104,6 +1105,158 @@ function VideoBoardPage({ navigate }) {
   )
 }
 
+// ===== ADS MANAGEMENT PAGE =====
+function AdsPage({ navigate }) {
+  const [ads, setAds] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [showAdd, setShowAdd] = useState(false)
+  const [editingAd, setEditingAd] = useState(null)
+  const [form, setForm] = useState({ name: '', image_url: '', link_url: '', zone: 'top_banner', is_active: true })
+
+  const adZones = [
+    { value: 'top_banner', label: 'Top Banner (728x90)' },
+    { value: 'homepage_inline', label: 'Homepage Inline Banner' },
+    { value: 'sidebar_1', label: 'Sidebar Ad 1' },
+    { value: 'sidebar_2', label: 'Sidebar Ad 2' },
+    { value: 'article_top', label: 'Article Top Ad' },
+    { value: 'article_mid', label: 'Article Mid Ad' },
+    { value: 'article_end', label: 'Article End Ad' },
+    { value: 'category_sidebar', label: 'Category Sidebar' }
+  ]
+
+  const loadAds = async () => {
+    try {
+      const data = await api('/ads')
+      setAds(data || [])
+    } catch (e) { console.error(e) }
+    setLoading(false)
+  }
+
+  useEffect(() => { loadAds() }, [])
+
+  const saveAd = async () => {
+    if (!form.name || !form.image_url) return alert('Name and image URL required')
+    try {
+      if (editingAd) {
+        await api(`/ads/${editingAd.id}`, { method: 'PUT', body: JSON.stringify(form) })
+      } else {
+        await api('/ads', { method: 'POST', body: JSON.stringify(form) })
+      }
+      setForm({ name: '', image_url: '', link_url: '', zone: 'top_banner', is_active: true })
+      setShowAdd(false)
+      setEditingAd(null)
+      loadAds()
+    } catch (e) { console.error(e) }
+  }
+
+  const deleteAd = async (id) => {
+    if (!confirm('Delete this ad?')) return
+    try {
+      await api(`/ads/${id}`, { method: 'DELETE' })
+      loadAds()
+    } catch (e) { console.error(e) }
+  }
+
+  const editAd = (ad) => {
+    setEditingAd(ad)
+    setForm({ name: ad.name, image_url: ad.image_url, link_url: ad.link_url, zone: ad.zone, is_active: ad.is_active })
+    setShowAdd(true)
+  }
+
+  const toggleActive = async (ad) => {
+    try {
+      await api(`/ads/${ad.id}`, { method: 'PUT', body: JSON.stringify({ is_active: !ad.is_active }) })
+      loadAds()
+    } catch (e) { console.error(e) }
+  }
+
+  if (loading) return <div className="flex items-center justify-center h-48"><Loader2 className="h-8 w-8 animate-spin text-brand-gold" /></div>
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-gray-500">{ads.length} advertisements</p>
+        <Button size="sm" onClick={() => { setShowAdd(true); setEditingAd(null); setForm({ name: '', image_url: '', link_url: '', zone: 'top_banner', is_active: true }) }} className="bg-brand-gold text-brand-navy">
+          <PlusCircle className="h-4 w-4 mr-1" />Add Advertisement
+        </Button>
+      </div>
+
+      {showAdd && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{editingAd ? 'Edit' : 'Add'} Advertisement</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div>
+              <Label>Ad Name</Label>
+              <Input placeholder="e.g., Top Banner - Sponsor A" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Image URL</Label>
+              <Input placeholder="https://example.com/ad-image.jpg" value={form.image_url} onChange={e => setForm(p => ({ ...p, image_url: e.target.value }))} />
+              <p className="text-xs text-gray-500 mt-1">Upload image via Media Library first, then paste URL here</p>
+            </div>
+            <div>
+              <Label>Click URL (Link)</Label>
+              <Input placeholder="https://example.com/landing-page" value={form.link_url} onChange={e => setForm(p => ({ ...p, link_url: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Ad Zone</Label>
+              <Select value={form.zone} onValueChange={(v) => setForm(p => ({ ...p, zone: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {adZones.map(z => <SelectItem key={z.value} value={z.value}>{z.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch checked={form.is_active} onCheckedChange={(v) => setForm(p => ({ ...p, is_active: v }))} />
+              <Label>Active</Label>
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={saveAd} className="bg-brand-gold text-brand-navy">{editingAd ? 'Update' : 'Add'}</Button>
+              <Button size="sm" variant="outline" onClick={() => { setShowAdd(false); setEditingAd(null) }}>Cancel</Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {ads.map(ad => (
+          <Card key={ad.id}>
+            <CardContent className="pt-4">
+              <div className="aspect-video bg-gray-100 mb-3 rounded overflow-hidden">
+                {ad.image_url && <img src={ad.image_url} alt={ad.name} className="w-full h-full object-cover" />}
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="font-semibold text-sm">{ad.name}</p>
+                    <Badge variant="outline" className="mt-1 text-xs">{adZones.find(z => z.value === ad.zone)?.label}</Badge>
+                  </div>
+                  <Switch checked={ad.is_active} onCheckedChange={() => toggleActive(ad)} />
+                </div>
+                {ad.link_url && <p className="text-xs text-gray-500 truncate">{ad.link_url}</p>}
+                <div className="flex gap-1 mt-2">
+                  <Button size="sm" variant="outline" onClick={() => editAd(ad)} className="text-xs h-7"><Edit className="h-3 w-3 mr-1" />Edit</Button>
+                  <Button size="sm" variant="outline" onClick={() => deleteAd(ad.id)} className="text-xs h-7"><Trash2 className="h-3 w-3 mr-1" />Delete</Button>
+                  {ad.link_url && <Button size="sm" variant="outline" asChild className="text-xs h-7"><a href={ad.link_url} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-3 w-3" /></a></Button>}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {ads.length === 0 && !showAdd && (
+        <div className="text-center py-12 text-gray-500">
+          <p>No advertisements yet. Click "Add Advertisement" to get started.</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ===== CATEGORIES PAGE =====
 function CategoriesPage({ categories, subcategories, onRefresh }) {
   const [loading, setLoading] = useState(false)
@@ -1583,6 +1736,9 @@ export default function DashboardApp() {
   } else if (pathname === '/dashboard/video') {
     title = 'Video Production Board'
     content = <VideoBoardPage navigate={navigate} />
+  } else if (pathname === '/dashboard/ads') {
+    title = 'Advertisement Management'
+    content = <AdsPage navigate={navigate} />
   } else if (pathname === '/dashboard/categories') {
     title = 'Categories'
     content = <CategoriesPage categories={categories} subcategories={subcategories} onRefresh={() => {

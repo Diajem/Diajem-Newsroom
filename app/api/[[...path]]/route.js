@@ -522,6 +522,125 @@ async function handleRoute(request, { params }) {
       return json({ success: true })
     }
 
+    // ===== YOUTUBE VIDEOS =====
+    if (route === '/youtube/sync' && method === 'POST') {
+      const user = await authenticate(request, db)
+      if (!user) return err('Unauthorized', 401)
+      
+      try {
+        const channels = [
+          { handle: '@diajemsports', channelId: 'UCYourSportsChannelId', subcategory: 'Sports' },
+          { handle: '@diajemnews', channelId: 'UCYourNewsChannelId', subcategory: 'News' }
+        ]
+        
+        let syncedCount = 0
+        
+        for (const channel of channels) {
+          // Fetch RSS feed
+          const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channel.channelId}`
+          const response = await fetch(rssUrl)
+          const xmlText = await response.text()
+          
+          // Parse XML (simple regex parsing for MVP)
+          const entries = xmlText.match(/<entry>[\s\S]*?<\/entry>/g) || []
+          
+          for (const entry of entries) {
+            const videoId = entry.match(/<yt:videoId>(.*?)<\/yt:videoId>/)?.[1]
+            const title = entry.match(/<title>(.*?)<\/title>/)?.[1]
+            const published = entry.match(/<published>(.*?)<\/published>/)?.[1]
+            const thumbnail = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`
+            const link = `https://www.youtube.com/watch?v=${videoId}`
+            
+            if (videoId) {
+              // Check if already exists
+              const existing = await db.collection('youtube_videos').findOne({ video_id: videoId })
+              
+              if (!existing) {
+                await db.collection('youtube_videos').insertOne({
+                  id: uuidv4(),
+                  video_id: videoId,
+                  title: title || '',
+                  thumbnail_url: thumbnail,
+                  video_url: link,
+                  channel_handle: channel.handle,
+                  subcategory: channel.subcategory,
+                  published_at: new Date(published),
+                  created_at: new Date()
+                })
+                syncedCount++
+              }
+            }
+          }
+        }
+        
+        return json({ message: `Synced ${syncedCount} new videos`, count: syncedCount })
+      } catch (e) {
+        console.error('YouTube sync error:', e)
+        return err('Failed to sync YouTube videos: ' + e.message, 500)
+      }
+    }
+
+    if (route === '/youtube/videos' && method === 'GET') {
+      const filter = {}
+      if (sp.subcategory) filter.subcategory = sp.subcategory
+      const videos = await db.collection('youtube_videos').find(filter).sort({ published_at: -1 }).limit(20).toArray()
+      return json(videos.map(({ _id, ...v }) => v))
+    }
+
+    // ===== ADVERTISEMENTS =====
+    if (route === '/ads' && method === 'GET') {
+      const user = await authenticate(request, db)
+      if (!user) return err('Unauthorized', 401)
+      const ads = await db.collection('ads').find({}).sort({ created_at: -1 }).toArray()
+      return json(ads.map(({ _id, ...a }) => a))
+    }
+
+    if (route === '/ads' && method === 'POST') {
+      const user = await authenticate(request, db)
+      if (!user) return err('Unauthorized', 401)
+      const body = await request.json()
+      const ad = {
+        id: uuidv4(),
+        name: body.name || '',
+        image_url: body.image_url || '',
+        link_url: body.link_url || '',
+        zone: body.zone || 'top_banner',
+        is_active: body.is_active !== false,
+        created_at: new Date(),
+        updated_at: new Date()
+      }
+      await db.collection('ads').insertOne(ad)
+      const { _id, ...clean } = ad
+      return json(clean, 201)
+    }
+
+    const adMatch = route.match(/^\/ads\/([^\/]+)$/)
+    if (adMatch && method === 'PUT') {
+      const user = await authenticate(request, db)
+      if (!user) return err('Unauthorized', 401)
+      const body = await request.json()
+      body.updated_at = new Date()
+      await db.collection('ads').updateOne({ id: adMatch[1] }, { $set: body })
+      const updated = await db.collection('ads').findOne({ id: adMatch[1] })
+      if (!updated) return err('Ad not found', 404)
+      const { _id, ...clean } = updated
+      return json(clean)
+    }
+
+    if (adMatch && method === 'DELETE') {
+      const user = await authenticate(request, db)
+      if (!user) return err('Unauthorized', 401)
+      await db.collection('ads').deleteOne({ id: adMatch[1] })
+      return json({ success: true })
+    }
+
+    if (route === '/public/ads' && method === 'GET') {
+      const filter = { is_active: true }
+      if (sp.zone) filter.zone = sp.zone
+      const ads = await db.collection('ads').find(filter).toArray()
+      return json(ads.map(({ _id, ...a }) => a))
+    }
+
     // ===== AI: REWRITE ARTICLE =====
     if (route === '/ai/rewrite' && method === 'POST') {
       const user = await authenticate(request, db)
@@ -774,7 +893,7 @@ async function handleRoute(request, { params }) {
           'Travel': ['Destinations', 'Hotels', 'Airlines', 'Visa & Migration', 'African Travel', 'Caribbean Travel'],
           'Culture': ['Music', 'Film', 'Fashion', 'Food', 'Literature', 'Heritage'],
           'Health & Wellbeing': ['Public Health', 'Mental Health', 'Nutrition', 'Fitness', 'Healthcare Systems'],
-          'Diajem TV': ['Interviews', 'Reports', 'Documentaries', 'News Bulletins'],
+          'Diajem TV': ['Sports', 'News', 'Interviews', 'Reports', 'Documentaries', 'News Bulletins'],
           'Podcast': ['Interviews', 'Analysis', 'Special Series']
         }
 

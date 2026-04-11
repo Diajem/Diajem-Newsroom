@@ -98,7 +98,7 @@ function Sidebar({ currentPath, navigate, user, onLogout }) {
   return (
     <div className="w-64 bg-brand-dark min-h-screen flex flex-col fixed left-0 top-0 z-40">
       <div className="p-6">
-        <button onClick={() => navigate('/')} className="block">
+        <button onClick={() => navigate('/dashboard')} className="block">
           <span className="text-2xl font-serif font-bold text-brand-gold">DIAJEM</span>
           <p className="text-[9px] tracking-[0.2em] text-brand-gold-light uppercase">Editorial Dashboard</p>
         </button>
@@ -106,7 +106,18 @@ function Sidebar({ currentPath, navigate, user, onLogout }) {
       <ScrollArea className="flex-1 px-3">
         <nav className="space-y-1">
           {items.map(item => {
-            const active = currentPath === item.path || (item.path !== '/dashboard' && currentPath.startsWith(item.path) && item.path.length > '/dashboard'.length)
+            let active = false
+            if (item.path === '/dashboard') {
+              active = currentPath === '/dashboard'
+            } else if (item.path === '/dashboard/articles') {
+              active = currentPath === '/dashboard/articles'
+            } else if (item.path === '/dashboard/stories') {
+              active = currentPath === '/dashboard/stories'
+            } else if (item.path === '/dashboard/scripts') {
+              active = currentPath === '/dashboard/scripts'
+            } else {
+              active = currentPath === item.path || (currentPath.startsWith(item.path + '/'))
+            }
             return (
               <button key={item.path} onClick={() => navigate(item.path)}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition ${active ? 'bg-brand-gold/20 text-brand-gold' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
@@ -118,6 +129,9 @@ function Sidebar({ currentPath, navigate, user, onLogout }) {
         </nav>
       </ScrollArea>
       <div className="p-4 border-t border-white/10">
+        <button onClick={() => navigate('/')} className="flex items-center gap-2 text-gray-500 hover:text-brand-gold text-xs mb-3 w-full transition">
+          <Globe className="h-3.5 w-3.5" />View Public Site
+        </button>
         <div className="flex items-center gap-3 mb-3">
           <div className="w-8 h-8 rounded-full bg-brand-gold/20 flex items-center justify-center text-brand-gold text-sm font-bold">
             {user?.name?.charAt(0) || 'A'}
@@ -1151,11 +1165,153 @@ function SheetsPage() {
 
 // ===== MEDIA LIBRARY =====
 function MediaLibraryPage() {
+  const [media, setMedia] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [uploading, setUploading] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
+  const [copied, setCopied] = useState('')
+
+  const loadMedia = async () => {
+    try {
+      const data = await api('/media')
+      setMedia(data || [])
+    } catch (e) { console.error(e) }
+    setLoading(false)
+  }
+
+  useEffect(() => { loadMedia() }, [])
+
+  const handleUpload = async (files) => {
+    if (!files || files.length === 0) return
+    setUploading(true)
+    for (const file of files) {
+      try {
+        const formData = new FormData()
+        formData.append('file', file)
+        const token = localStorage.getItem('diajem_token')
+        const res = await fetch('/api/media/upload', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: formData
+        })
+        if (!res.ok) {
+          const errData = await res.json()
+          console.error('Upload error:', errData.error)
+        }
+      } catch (e) { console.error('Upload failed:', e) }
+    }
+    setUploading(false)
+    loadMedia()
+  }
+
+  const handleDrop = (e) => {
+    e.preventDefault()
+    setDragOver(false)
+    handleUpload(e.dataTransfer.files)
+  }
+
+  const handleFileInput = (e) => {
+    handleUpload(e.target.files)
+    e.target.value = ''
+  }
+
+  const deleteMedia = async (id) => {
+    if (!confirm('Delete this file?')) return
+    try {
+      await api(`/media/${id}`, { method: 'DELETE' })
+      setMedia(prev => prev.filter(m => m.id !== id))
+    } catch (e) { console.error(e) }
+  }
+
+  const copyUrl = (url) => {
+    navigator.clipboard.writeText(url)
+    setCopied(url)
+    setTimeout(() => setCopied(''), 2000)
+  }
+
+  const formatSize = (bytes) => {
+    if (bytes < 1024) return bytes + ' B'
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB'
+    return (bytes / 1048576).toFixed(1) + ' MB'
+  }
+
+  const isImage = (mime) => mime?.startsWith('image/')
+
+  if (loading) return <div className="flex items-center justify-center h-48"><Loader2 className="h-8 w-8 animate-spin text-brand-gold" /></div>
+
   return (
-    <div className="text-center py-16">
-      <Image className="h-16 w-16 text-gray-200 mx-auto mb-4" />
-      <h3 className="text-xl font-medium text-gray-500 mb-2">Media Library</h3>
-      <p className="text-gray-400">Coming soon. Media uploads and management will be available here.</p>
+    <div className="space-y-6">
+      {/* Upload Area */}
+      <div
+        className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors ${dragOver ? 'border-brand-gold bg-brand-gold/5' : 'border-gray-300 hover:border-brand-gold/50'}`}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={handleDrop}
+      >
+        {uploading ? (
+          <div className="flex flex-col items-center gap-3">
+            <Loader2 className="h-10 w-10 animate-spin text-brand-gold" />
+            <p className="text-gray-600 font-medium">Uploading...</p>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-16 h-16 rounded-full bg-brand-gold/10 flex items-center justify-center">
+              <Image className="h-8 w-8 text-brand-gold" />
+            </div>
+            <div>
+              <p className="text-gray-700 font-medium">Drag and drop files here</p>
+              <p className="text-gray-400 text-sm mt-1">or click to browse</p>
+            </div>
+            <label className="cursor-pointer">
+              <input type="file" multiple accept="image/*,video/*,audio/*,.pdf,.doc,.docx" onChange={handleFileInput} className="hidden" />
+              <span className="inline-flex items-center justify-center rounded-md text-sm font-medium border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-4 py-2 cursor-pointer">Browse Files</span>
+            </label>
+            <p className="text-xs text-gray-400">Supports images, videos, audio, PDFs, and documents</p>
+          </div>
+        )}
+      </div>
+
+      {/* Media Grid */}
+      {media.length > 0 ? (
+        <div>
+          <p className="text-sm text-gray-500 mb-4">{media.length} file{media.length !== 1 ? 's' : ''} uploaded</p>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {media.map(item => (
+              <Card key={item.id} className="overflow-hidden group">
+                <div className="aspect-square bg-gray-100 relative">
+                  {isImage(item.mime_type) ? (
+                    <img src={item.url} alt={item.original_name} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex flex-col items-center justify-center p-4">
+                      <FileText className="h-12 w-12 text-gray-300 mb-2" />
+                      <span className="text-xs text-gray-500 text-center truncate w-full">{item.original_name}</span>
+                    </div>
+                  )}
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2">
+                    <Button size="sm" variant="secondary" onClick={() => copyUrl(item.url)} className="h-8 text-xs">
+                      {copied === item.url ? <><CheckCircle className="h-3 w-3 mr-1" />Copied</> : <><ExternalLink className="h-3 w-3 mr-1" />Copy URL</>}
+                    </Button>
+                    <Button size="sm" variant="destructive" onClick={() => deleteMedia(item.id)} className="h-8 text-xs">
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+                <CardContent className="p-3">
+                  <p className="text-xs font-medium text-gray-700 truncate" title={item.original_name}>{item.original_name}</p>
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-[10px] text-gray-400">{formatSize(item.size)}</span>
+                    <span className="text-[10px] text-gray-400">{new Date(item.created_at).toLocaleDateString()}</span>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="text-center py-8">
+          <p className="text-gray-400">No files uploaded yet. Drag and drop or click browse to upload.</p>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,6 +1,9 @@
 import { MongoClient } from 'mongodb'
 import { v4 as uuidv4 } from 'uuid'
 import { NextResponse } from 'next/server'
+import { writeFile, readFile, unlink, mkdir } from 'fs/promises'
+import { existsSync } from 'fs'
+import nodePath from 'path'
 
 let client, db
 
@@ -737,6 +740,94 @@ async function handleRoute(request, { params }) {
       const logs = await db.collection('activity_logs').find({})
         .sort({ created_at: -1 }).limit(50).toArray()
       return json(logs.map(({ _id, ...l }) => l))
+    }
+
+    // ===== MEDIA UPLOAD =====
+    const UPLOAD_DIR = nodePath.join(process.cwd(), 'uploads')
+
+    if (route === '/media/upload' && method === 'POST') {
+      const user = await authenticate(request, db)
+      if (!user) return err('Unauthorized', 401)
+
+      try {
+        if (!existsSync(UPLOAD_DIR)) await mkdir(UPLOAD_DIR, { recursive: true })
+        const formData = await request.formData()
+        const file = formData.get('file')
+        if (!file) return err('No file uploaded')
+
+        const bytes = await file.arrayBuffer()
+        const buffer = Buffer.from(bytes)
+        const ext = file.name.split('.').pop().toLowerCase()
+        const filename = `${uuidv4()}.${ext}`
+        const filepath = nodePath.join(UPLOAD_DIR, filename)
+        await writeFile(filepath, buffer)
+
+        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || ''
+        const media = {
+          id: uuidv4(),
+          filename: filename,
+          original_name: file.name,
+          mime_type: file.type || 'application/octet-stream',
+          size: buffer.length,
+          url: `${baseUrl}/api/media/file/${filename}`,
+          created_at: new Date(),
+          uploaded_by: user.name || user.email
+        }
+        await db.collection('media').insertOne(media)
+        const { _id, ...clean } = media
+        return json(clean, 201)
+      } catch (e) {
+        console.error('Upload error:', e)
+        return err('Upload failed: ' + e.message, 500)
+      }
+    }
+
+    if (route === '/media' && method === 'GET') {
+      const user = await authenticate(request, db)
+      if (!user) return err('Unauthorized', 401)
+      const items = await db.collection('media').find({}).sort({ created_at: -1 }).toArray()
+      return json(items.map(({ _id, ...m }) => m))
+    }
+
+    const mediaFileMatch = route.match(/^\/media\/file\/([^\/]+)$/)
+    if (mediaFileMatch && method === 'GET') {
+      const filename = mediaFileMatch[1]
+      const filepath = nodePath.join(UPLOAD_DIR, filename)
+      if (!existsSync(filepath)) return err('File not found', 404)
+      try {
+        const buffer = await readFile(filepath)
+        const ext = filename.split('.').pop().toLowerCase()
+        const mimeMap = {
+          jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif',
+          webp: 'image/webp', svg: 'image/svg+xml', mp4: 'video/mp4', mp3: 'audio/mpeg',
+          pdf: 'application/pdf', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        }
+        const contentType = mimeMap[ext] || 'application/octet-stream'
+        return new NextResponse(buffer, {
+          status: 200,
+          headers: {
+            'Content-Type': contentType,
+            'Content-Length': buffer.length.toString(),
+            'Cache-Control': 'public, max-age=31536000',
+          }
+        })
+      } catch (e) {
+        return err('File read error', 500)
+      }
+    }
+
+    const mediaDeleteMatch = route.match(/^\/media\/([^\/]+)$/)
+    if (mediaDeleteMatch && method === 'DELETE') {
+      const user = await authenticate(request, db)
+      if (!user) return err('Unauthorized', 401)
+      const media = await db.collection('media').findOne({ id: mediaDeleteMatch[1] })
+      if (!media) return err('Media not found', 404)
+      try {
+        const filepath = nodePath.join(UPLOAD_DIR, media.filename)
+        if (existsSync(filepath)) await unlink(filepath)
+      } catch (e) { /* file might not exist */ }
+      await db.collection('media').deleteOne({ id: mediaDeleteMatch[1] })
+      return json({ success: true })
     }
 
     return err(`Route ${route} not found`, 404)

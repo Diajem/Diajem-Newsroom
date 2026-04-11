@@ -780,8 +780,23 @@ async function handleRoute(request, { params }) {
       const articles = await db.collection('articles').find(filter)
         .sort({ published_at: -1, created_at: -1 })
         .skip((page - 1) * limit).limit(limit).toArray()
+      
+      // Populate category_name and subcategory_name
+      const categories = await db.collection('categories').find({}).toArray()
+      const subcategories = await db.collection('subcategories').find({}).toArray()
+      const catMap = {}
+      const subMap = {}
+      categories.forEach(c => catMap[c.id] = c.name)
+      subcategories.forEach(s => subMap[s.id] = s.name)
+      
+      const enrichedArticles = articles.map(({ _id, body_markdown, ...a }) => ({
+        ...a,
+        category_name: catMap[a.category_id] || a.category_name || '',
+        subcategory_name: subMap[a.subcategory_id] || a.subcategory_name || ''
+      }))
+      
       return json({
-        articles: articles.map(({ _id, body_markdown, ...a }) => a),
+        articles: enrichedArticles,
         total, page, limit
       })
     }

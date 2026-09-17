@@ -17,10 +17,8 @@ async function connectToMongo() {
 }
 
 function cors(res) {
-  res.headers.set('Access-Control-Allow-Origin', process.env.CORS_ORIGINS || '*')
   res.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH')
   res.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-  res.headers.set('Access-Control-Allow-Credentials', 'true')
   return res
 }
 
@@ -42,7 +40,10 @@ async function comparePw(password, hash) {
 async function authenticate(request, db) {
   const h = request.headers.get('authorization')
   if (!h?.startsWith('Bearer ')) return null
-  const user = await db.collection('users').findOne({ auth_token: h.split(' ')[1] })
+  const user = await db.collection('users').findOne({
+    auth_token: h.split(' ')[1],
+    auth_token_expires_at: { $gt: new Date() }
+  })
   if (!user) return null
   const { password_hash, auth_token, _id, ...safe } = user
   return safe
@@ -121,15 +122,49 @@ async function handleRoute(request, { params }) {
       const valid = await comparePw(password, user.password_hash)
       if (!valid) return err('Invalid credentials', 401)
       const token = uuidv4()
-      await db.collection('users').updateOne({ id: user.id }, { $set: { auth_token: token } })
+      const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000)
+      await db.collection('users').updateOne(
+        { id: user.id },
+        { $set: { auth_token: token, auth_token_expires_at: expiresAt } }
+      )
       const { password_hash, auth_token, _id, ...safe } = user
-      return json({ token, user: safe })
+      return json({ token, expires_at: expiresAt, user: safe })
     }
 
     if (route === '/auth/me' && method === 'GET') {
       const user = await authenticate(request, db)
       if (!user) return err('Unauthorized', 401)
       return json({ user })
+    }
+
+    if (route === '/auth/logout' && method === 'POST') {
+      const user = await authenticate(request, db)
+      if (!user) return err('Unauthorized', 401)
+      await db.collection('users').updateOne(
+        { id: user.id },
+        { $unset: { auth_token: '', auth_token_expires_at: '' } }
+      )
+      return json({ success: true })
+    }
+
+    if (route === '/auth/change-password' && method === 'POST') {
+      const user = await authenticate(request, db)
+      if (!user) return err('Unauthorized', 401)
+      const { current_password, new_password } = await request.json()
+      if (!current_password || !new_password) return err('Current and new password are required')
+      if (new_password.length < 12) return err('New password must be at least 12 characters')
+      const storedUser = await db.collection('users').findOne({ id: user.id })
+      if (!storedUser || !(await comparePw(current_password, storedUser.password_hash))) {
+        return err('Current password is incorrect', 401)
+      }
+      await db.collection('users').updateOne(
+        { id: user.id },
+        {
+          $set: { password_hash: await hashPw(new_password), password_changed_at: new Date() },
+          $unset: { auth_token: '', auth_token_expires_at: '' }
+        }
+      )
+      return json({ success: true })
     }
 
     // ===== CATEGORIES =====
@@ -875,6 +910,10 @@ async function handleRoute(request, { params }) {
 
     // ===== SEED =====
     if (route === '/seed' && method === 'POST') {
+      const seedSecret = process.env.SEED_SECRET
+      if (!seedSecret || request.headers.get('x-seed-secret') !== seedSecret) {
+        return err('Not found', 404)
+      }
       const categories = [
         { name: 'Africa', order: 1 }, { name: 'Diaspora', order: 2 },
         { name: 'Caribbean', order: 3 }, { name: 'Sports', order: 4 },
@@ -926,11 +965,16 @@ async function handleRoute(request, { params }) {
         }
       }
 
-      const adminExists = await db.collection('users').findOne({ email: 'admin@diajemnews.com' })
+      const adminEmail = process.env.ADMIN_EMAIL
+      const adminPassword = process.env.ADMIN_PASSWORD
+      if (!adminEmail || !adminPassword || adminPassword.length < 12) {
+        return err('Secure ADMIN_EMAIL and ADMIN_PASSWORD configuration is required', 500)
+      }
+      const adminExists = await db.collection('users').findOne({ email: adminEmail })
       if (!adminExists) {
         await db.collection('users').insertOne({
-          id: uuidv4(), email: 'admin@diajemnews.com',
-          password_hash: await hashPw('DiajemAdmin2025!'),
+          id: uuidv4(), email: adminEmail,
+          password_hash: await hashPw(adminPassword),
           name: 'Admin', role: 'admin', created_at: new Date()
         })
       }
@@ -1018,9 +1062,15 @@ async function handleRoute(request, { params }) {
         const file = formData.get('file')
         if (!file) return err('No file uploaded')
 
+        const allowedExtensions = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mp3', 'pdf', 'doc', 'docx'])
+        const ext = file.name.split('.').pop()?.toLowerCase()
+        const maxUploadBytes = Number(process.env.MAX_UPLOAD_BYTES || 25 * 1024 * 1024)
+        if (!ext || !allowedExtensions.has(ext)) return err('Unsupported file type', 415)
+        if (!Number.isFinite(maxUploadBytes) || maxUploadBytes <= 0) return err('Invalid upload configuration', 500)
+        if (file.size > maxUploadBytes) return err('File exceeds upload size limit', 413)
+
         const bytes = await file.arrayBuffer()
         const buffer = Buffer.from(bytes)
-        const ext = file.name.split('.').pop().toLowerCase()
         const filename = `${uuidv4()}.${ext}`
         const filepath = nodePath.join(UPLOAD_DIR, filename)
         await writeFile(filepath, buffer)
@@ -1096,7 +1146,7 @@ async function handleRoute(request, { params }) {
     return err(`Route ${route} not found`, 404)
   } catch (error) {
     console.error('API Error:', error)
-    return err('Internal server error: ' + error.message, 500)
+    return err(process.env.NODE_ENV === 'development' ? `Internal server error: ${error.message}` : 'Internal server error', 500)
   }
 }
 

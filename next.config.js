@@ -3,10 +3,8 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  experimental: {
-    // Remove if not using Server Components
-    serverComponentsExternalPackages: ['mongodb'],
-  },
+  serverExternalPackages: ['mongodb'],
+  turbopack: {},
   webpack(config, { dev }) {
     if (dev) {
       // Reduce CPU/memory from file watching
@@ -37,11 +35,11 @@ const nextConfig = {
       {
         source: "/(.*)",
         headers: [
-          { key: "X-Frame-Options", value: "ALLOWALL" },
-          { key: "Content-Security-Policy", value: "frame-ancestors *;" },
-          { key: "Access-Control-Allow-Origin", value: process.env.CORS_ORIGINS || "*" },
-          { key: "Access-Control-Allow-Methods", value: "GET, POST, PUT, DELETE, OPTIONS" },
-          { key: "Access-Control-Allow-Headers", value: "*" },
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'self'; object-src 'none'; base-uri 'self';" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
         ],
       },
     ];

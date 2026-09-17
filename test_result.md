@@ -118,7 +118,7 @@ backend:
         comment: "Login with email/password returns token. Tested with curl."
       - working: true
         agent: "testing"
-        comment: "Comprehensive testing completed. Login successful with admin@diajemnews.com, returns valid token and user object. Auth/me endpoint works correctly with Bearer token."
+        comment: "Comprehensive testing completed. Login returned a valid token and user object. Auth/me endpoint worked correctly with the bearer token."
 
   - task: "Seed database endpoint"
     implemented: true
@@ -269,6 +269,6 @@ test_plan:
 
 agent_communication:
   - agent: "main"
-    message: "Full backend API implemented for Diajem Global Black News platform. All CRUD endpoints for stories, articles, scripts, video-tasks, categories, settings. AI endpoints use OpenAI GPT-4o via Emergent proxy (baseURL: https://integrations.emergentagent.com/llm, key: process.env.EMERGENT_LLM_KEY). Auth uses Bearer token. Admin: admin@diajemnews.com / DiajemAdmin2025!. Google Sheets export is MOCKED. Skip testing AI endpoints (they take 30+ seconds and use real API). Focus on CRUD operations and auth."
+    message: "Full backend API implemented for Diajem Global Black News platform. All CRUD endpoints for stories, articles, scripts, video-tasks, categories, settings. AI endpoints use OpenAI GPT-4o via the configured provider. Authentication uses bearer tokens. Google Sheets export is MOCKED. AI endpoints were excluded from this historical test run because they use a live API."
   - agent: "testing"
     message: "Comprehensive backend testing completed successfully. All 29 tests passed including: Auth (login, me), Categories CRUD, Stories CRUD, Articles CRUD, Video Tasks CRUD, Public endpoints (articles, categories, search), Stats, Settings, Sheet exports (MOCKED). Database seeding works correctly. All authentication is properly enforced. Public endpoints work without auth. CRUD operations function correctly with proper data validation. No critical issues found."

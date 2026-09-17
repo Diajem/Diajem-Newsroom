@@ -10,12 +10,13 @@ import os
 from datetime import datetime
 
 # Get base URL from environment
-BASE_URL = "https://diaspora-editorial.preview.emergentagent.com"
+BASE_URL = os.environ.get("DIAJEM_TEST_BASE_URL", "http://localhost:3000")
 API_BASE = f"{BASE_URL}/api"
 
 # Test credentials
-ADMIN_EMAIL = "admin@diajemnews.com"
-ADMIN_PASSWORD = "DiajemAdmin2025!"
+ADMIN_EMAIL = os.environ.get("DIAJEM_TEST_ADMIN_EMAIL", "")
+ADMIN_PASSWORD = os.environ.get("DIAJEM_TEST_ADMIN_PASSWORD", "")
+SEED_SECRET = os.environ.get("DIAJEM_TEST_SEED_SECRET", "")
 
 class DiajemAPITester:
     def __init__(self):
@@ -35,13 +36,15 @@ class DiajemAPITester:
             "data": data
         })
         
-    def make_request(self, method, endpoint, data=None, auth=True, public=False):
+    def make_request(self, method, endpoint, data=None, auth=True, public=False, extra_headers=None):
         """Make HTTP request with proper headers"""
         url = f"{API_BASE}{endpoint}"
         headers = {"Content-Type": "application/json"}
         
         if auth and self.token and not public:
             headers["Authorization"] = f"Bearer {self.token}"
+        if extra_headers:
+            headers.update(extra_headers)
             
         try:
             if method == "GET":
@@ -64,7 +67,10 @@ class DiajemAPITester:
         """Test database seeding"""
         print("\n=== Testing Database Seed ===")
         
-        response = self.make_request("POST", "/seed", auth=False)
+        if not SEED_SECRET:
+            self.log_result("Seed Database", False, "DIAJEM_TEST_SEED_SECRET is not configured")
+            return False
+        response = self.make_request("POST", "/seed", auth=False, extra_headers={"X-Seed-Secret": SEED_SECRET})
         if response and response.status_code == 200:
             self.log_result("Seed Database", True, "Database seeded successfully")
             return True

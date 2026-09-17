@@ -37,8 +37,8 @@ function statusColor(s) {
 
 // ===== LOGIN =====
 function LoginPage({ onLogin }) {
-  const [email, setEmail] = useState('admin@diajemnews.com')
-  const [password, setPassword] = useState('DiajemAdmin2025!')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -1764,9 +1764,7 @@ export default function DashboardApp() {
 
   // Auto-seed on first load
   useEffect(() => {
-    if (!seeded) {
-      fetch('/api/seed', { method: 'POST' }).then(() => setSeeded(true)).catch(console.error)
-    }
+    if (!seeded) setSeeded(true)
   }, [seeded])
 
   // Load categories and subcategories when authenticated
@@ -1778,7 +1776,8 @@ export default function DashboardApp() {
   }, [token])
 
   const handleLogin = (t, u) => { setToken(t); setUser(u) }
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try { await api('/auth/logout', { method: 'POST' }) } catch (_) { /* Clear local session regardless. */ }
     setToken(null); setUser(null)
     localStorage.removeItem('diajem_token')
     navigate('/dashboard')
